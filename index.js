@@ -89,6 +89,8 @@ async function run() {
       .db("worldholidaysDB")
       .collection("travelersReview");
 
+      const travelUpdatesCollection = client.db("worldholidaysDB").collection("travelUpdates");
+
     const userCollection = client.db("worldholidaysDB").collection("users");
 
     // jwt related token
@@ -1167,6 +1169,77 @@ async function run() {
 
       res.send(result);
     });
+
+
+    // ── Travel Updates ────────────────────────────────────────────────
+
+// Public: frontend এ দেখাবে
+app.get("/travel-updates", async (req, res) => {
+  const result = await travelUpdatesCollection
+    .find({ isActive: true })
+    .sort({ date: -1 })
+    .toArray();
+  res.send(result);
+});
+
+// Admin: সব updates (active + inactive)
+app.get("/show-all-travel-updates", verifyToken, verifyAdminOrModerator, async (req, res) => {
+  const result = await travelUpdatesCollection
+    .find()
+    .sort({ date: -1 })
+    .toArray();
+  res.send(result);
+});
+
+// Admin: নতুন update add
+app.post("/travel-updates", verifyToken, verifyAdminOrModerator, async (req, res) => {
+  const item = req.body;
+  item.date = item.date || new Date().toISOString().split("T")[0];
+  item.isActive = true;
+  const result = await travelUpdatesCollection.insertOne(item);
+  res.send(result);
+});
+
+// Admin: update edit
+app.patch("/travel-updates/:id", verifyToken, verifyAdminOrModerator, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const data = req.body;
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid ID" });
+    }
+    const filter = { _id: new ObjectId(id) };
+    const updatedDoc = {
+  $set: {
+    title:       data.title,
+    description: data.description,
+    category:    data.category,
+    date:        data.date,
+    image:       data.image || "",   // ← add
+    tags:        Array.isArray(data.tags)
+                   ? data.tags
+                   : (data.tags || "").split(",").map(t => t.trim()).filter(Boolean),
+    featured:    data.featured || false,
+    isActive:    data.isActive !== undefined ? data.isActive : true,
+  },
+};
+    const result = await travelUpdatesCollection.updateOne(filter, updatedDoc);
+    if (result.modifiedCount === 0) {
+      return res.status(404).send({ message: "Not found or no changes made" });
+    }
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ message: "Failed to update", error: error.message });
+  }
+});
+
+// Admin: delete
+app.delete("/travel-updates/:id", verifyToken, verifyAdminOrModerator, async (req, res) => {
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  const result = await travelUpdatesCollection.deleteOne(query);
+  res.send(result);
+});
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
